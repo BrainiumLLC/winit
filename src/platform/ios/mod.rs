@@ -101,6 +101,14 @@ use self::ffi::{
     UIViewAutoresizingFlexibleHeight,
  };
 
+#[cfg(feature = "ios_metal")]
+#[path="metal.rs"]
+mod back;
+
+#[cfg(feature = "ios_gl")]
+#[path="gl.rs"]
+mod back;
+
 static mut JMPBUF: [c_int; 27] = [0; 27];
 
 pub struct Window {
@@ -487,7 +495,7 @@ fn create_delegate_class() {
             let view_controller: id = msg_send![view_controller, init];
 
             let view: id = msg_send![view_class, alloc];
-            let view: id = msg_send![view, initForGl:&bounds];
+            let view: id = msg_send![view, initForBack:&bounds];
 
             let _: () = msg_send![view_controller, setView:view];
 
@@ -640,16 +648,15 @@ fn create_delegate_class() {
     }
 }
 
-// TODO: winit shouldn't contain GL-specfiic code
 pub fn create_view_class() {
     let superclass = Class::get("UIViewController").expect("Failed to get class `UIViewController`");
     let decl = ClassDecl::new("MainViewController", superclass).expect("Failed to declare class `MainViewController`");
     decl.register();
 
-    extern fn init_for_gl(this: &Object, _: Sel, frame: *const c_void) -> id {
+    extern fn init_for_back(this: &Object, _: Sel, frame: *const c_void) -> id {
         unsafe {
             let bounds = frame as *const CGRect;
-            let view: id = msg_send![this, initWithFrame:(*bounds).clone()];
+            let view: id = back::init_view_with_frame(this, (*bounds).clone());
 
             let mask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             let _: () = msg_send![view, setAutoresizingMask:mask];
@@ -663,13 +670,13 @@ pub fn create_view_class() {
     }
 
     extern fn layer_class(_: &Class, _: Sel) -> *const Class {
-        unsafe { mem::transmute(Class::get("CAEAGLLayer").expect("Failed to get class `CAEAGLLayer`")) }
+        unsafe { mem::transmute(Class::get(back::LAYER_CLASS).expect(&format!("Failed to get class `{}`", back::LAYER_CLASS))) }
     }
 
-    let superclass = Class::get("GLKView").expect("Failed to get class `GLKView`");
+    let superclass = Class::get(back::VIEW_CLASS).expect(&format!("Failed to get class `{}`", back::VIEW_CLASS));
     let mut decl = ClassDecl::new("MainView", superclass).expect("Failed to declare class `MainView`");
     unsafe {
-        decl.add_method(sel!(initForGl:), init_for_gl as extern fn(&Object, Sel, *const c_void) -> id);
+        decl.add_method(sel!(initForBack:), init_for_back as extern fn(&Object, Sel, *const c_void) -> id);
         decl.add_class_method(sel!(layerClass), layer_class as extern fn(&Class, Sel) -> *const Class);
         decl.register();
     }
